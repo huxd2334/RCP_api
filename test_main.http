@@ -1,0 +1,35 @@
+# Test your FastAPI endpoints
+
+GET http://127.0.0.1:8000/
+Accept: application/json
+
+###
+
+GET http://127.0.0.1:8000/hello/User
+Accept: application/json
+
+###
+
+POST http://localhost:8000/predict/
+Accept: application/json
+Content-Type: application/json
+
+{
+  "Date_of_Harvest": "2023-07-15",
+  "District": "District_Chau_Phu",
+  "Season": "Season(SA = Summer Autumn, WS = Winter Spring)_SA",
+  "Latitude": 10.510542,
+  "Longitude": 105.248554,
+  "Field_size_ha": 3.4,
+  "Intensity": "Rice Crop Intensity(D=Double, T=Triple)_D",
+  "ndvi":  0.1,
+            "ndwi":  0.1,
+            "avi":  0.1,
+            "ndmi":  0.1,
+            "precip":  0.1,
+            "mean_rvi":  0.1,
+            "std_rvi":  0.1,
+            "max_rvi":  0.1,
+            "min_rvi":  0.1,
+            "range_rvi":  0.1
+}
