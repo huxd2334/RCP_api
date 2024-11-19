@@ -7,7 +7,7 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-VC_API_KEY = "3NDWEP3GJVMRCSVRRZS6BT59K"
+VC_API_KEY = ""
 
 def api_call(location, start_date, end_date):
     print('Fetching data for location: {} from {} to {}'.format(location, start_date, end_date))
