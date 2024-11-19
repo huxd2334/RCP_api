@@ -21,15 +21,5 @@ Content-Type: application/json
   "Latitude": 10.510542,
   "Longitude": 105.248554,
   "Field_size_ha": 3.4,
-  "Intensity": "Rice Crop Intensity(D=Double, T=Triple)_D",
-  "ndvi":  0.1,
-            "ndwi":  0.1,
-            "avi":  0.1,
-            "ndmi":  0.1,
-            "precip":  0.1,
-            "mean_rvi":  0.1,
-            "std_rvi":  0.1,
-            "max_rvi":  0.1,
-            "min_rvi":  0.1,
-            "range_rvi":  0.1
+  "Intensity": "Rice Crop Intensity(D=Double, T=Triple)_D"
 }

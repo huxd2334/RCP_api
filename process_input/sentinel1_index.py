@@ -45,9 +45,9 @@ def get_rvi(longitude, latitude, season, harvest_date, interval_days=12):
     plant_date = find_plant_date(season, harvest_date)
 
     plant_date = pd.to_datetime(plant_date, dayfirst=True)
-    print(f"Plant Date: {plant_date}")
+    # print(f"Plant Date: {plant_date}")
     harvest_date = pd.to_datetime(harvest_date, dayfirst=True)
-    print(f"Harvest Date: {harvest_date}\n")
+    # print(f"Harvest Date: {harvest_date}\n")
 
     # Generate dates for RVI calculation
     dates = []
@@ -105,13 +105,13 @@ def get_rvi(longitude, latitude, season, harvest_date, interval_days=12):
     # Calculate RVI features
     rvi_values = np.array(rvi_values)
     mean_rvi = np.mean(rvi_values) if len(rvi_values) > 0 else np.nan
-    std_rvi = np.std(rvi_values) if len(rvi_values) > 0 else np.nan
-    max_rvi = np.max(rvi_values) if len(rvi_values) > 0 else np.nan
-    min_rvi = np.min(rvi_values) if len(rvi_values) > 0 else np.nan
-    range_rvi = max_rvi - min_rvi if len(rvi_values) > 0 else np.nan
+    # std_rvi = np.std(rvi_values) if len(rvi_values) > 0 else np.nan
+    # max_rvi = np.max(rvi_values) if len(rvi_values) > 0 else np.nan
+    # min_rvi = np.min(rvi_values) if len(rvi_values) > 0 else np.nan
+    # range_rvi = max_rvi - min_rvi if len(rvi_values) > 0 else np.nan
 
 
-    return mean_rvi, std_rvi, max_rvi, min_rvi, range_rvi
+    return mean_rvi
 # Test
 # rvi = get_rvi(105.248554, 10.510542, "SA", "15-07-2023")
 # print(rvi)

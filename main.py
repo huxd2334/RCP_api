@@ -83,9 +83,9 @@ async def predict(data: PredictionRequest):
             'Rice Crop Intensity(D=Double, T=Triple)_T': [1, 0]
         }
 
-        mean_rvi, std_rvi, max_rvi, min_rvi, range_rvi = await asyncio.to_thread(get_rvi, data.Longitude, data.Latitude, season,
+        rvi= await asyncio.to_thread(get_rvi, data.Longitude, data.Latitude, season,
                                       data.Date_of_Harvest.strftime('%d-%m-%Y'))
-        logger.info(f"RVI result: {mean_rvi, std_rvi, max_rvi, min_rvi, range_rvi}")
+        logger.info(f"RVI result: {rvi}")
 
         # Asynchronously fetch indices and weather data
         ndvi, ndwi, avi, ndmi = await asyncio.to_thread(get_ls_index, data.Longitude, data.Latitude, season,
@@ -123,11 +123,7 @@ async def predict(data: PredictionRequest):
             avi,
             ndmi,
             precip,
-            mean_rvi,
-            std_rvi,
-            max_rvi,
-            min_rvi,
-            range_rvi
+            rvi
         ]).reshape(1, -1)
 
         # Perform prediction using the model pipeline
