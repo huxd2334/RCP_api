@@ -130,7 +130,7 @@ async def predict(data: PredictionRequest):
         prediction = model.predict(features)
 
         # Return the prediction result
-        return {"prediction_crop_yield": prediction.tolist()}
+        return {"predicted_crop_yield": prediction.tolist()}
 
 
 

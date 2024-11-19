@@ -7,11 +7,11 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+VC_API_KEY = "3NDWEP3GJVMRCSVRRZS6BT59K"
 
 def api_call(location, start_date, end_date):
     print('Fetching data for location: {} from {} to {}'.format(location, start_date, end_date))
-    key='3NDWEP3GJVMRCSVRRZS6BT59K'
+    key=VC_API_KEY
     response = requests.request("GET", "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{}/{}/{}?unitGroup=metric&include=days&key={}&contentType=json".format(location, start_date, end_date, key ))
     if response.status_code != 200:
       print('Unexpected Status code: ', response.status_code)
