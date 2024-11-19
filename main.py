@@ -141,4 +141,3 @@ async def predict(data: PredictionRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="localhost", port=8000, reload=True)
-# ê chưa chạy, t chưa train lại model để đẩy dô, nào ta upload r dô test mậy
