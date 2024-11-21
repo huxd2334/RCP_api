@@ -4,6 +4,7 @@ warnings.filterwarnings('ignore')
 
 # Import common GIS tools
 import numpy as np
+import os
 # Import Planetary Computer tools
 from pystac_client import Client
 import planetary_computer as pc
@@ -11,6 +12,7 @@ from odc.stac import stac_load
 import logging
 import pandas as pd
 from datetime import timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,55 +22,47 @@ pc.settings.set_subscription_key(PC_API_KEY)
 
 from datetime import datetime
 
+
 def find_plant_date(season, harvest_date):
     logger = logging.getLogger(__name__)
     try:
         date_obj = datetime.strptime(harvest_date, '%d-%m-%Y')
+        today = datetime.today()
+
+        # If harvest date is in future, use today's date
+        if date_obj > today:
+            date_obj = today
+
         year = date_obj.year
+        month = date_obj.month
+
         if season == "SA":
             plant_date = f"01-04-{year}"
             logger.info(f"Plant Date for SA: {plant_date}")
         elif season == "WS":
-            plant_date = f"01-11-{year-1}"
+            # For WS, if current month is after October, use current year
+            # Otherwise, use previous year
+            if month >= 11:
+                plant_date = f"01-11-{year}"
+            else:
+                plant_date = f"01-11-{year - 1}"
             logger.info(f"Plant Date for WS: {plant_date}")
         else:
-            raise ValueError(f"Invalid season sen: {season}")
+            raise ValueError(f"Invalid season: {season}")
+
         return plant_date
 
     except Exception as e:
-        logger.error(f"Error in find_plant_date sen: {e}", exc_info=True)
+        logger.error(f"Error in find_plant_date: {e}", exc_info=True)
         raise
 
 
-def get_rvi(longitude, latitude, season, harvest_date, interval_days=12):
-    # find plant date
-    plant_date = find_plant_date(season, harvest_date)
-
-    plant_date = pd.to_datetime(plant_date, dayfirst=True)
-    # print(f"Plant Date: {plant_date}")
-    harvest_date = pd.to_datetime(harvest_date, dayfirst=True)
-    # print(f"Harvest Date: {harvest_date}\n")
-
-    # Generate dates for RVI calculation
-    dates = []
-    current_date = plant_date
-    while current_date <= harvest_date:
-        dates.append(current_date)
-        current_date += timedelta(days=interval_days)
-
-    rvi_values = []
-
-    for date in dates:
-        # Calculate box size based on field size (adjust as needed)
-        box_deg = 0.0004  # Approximately 40m x 40m
-
-        # Get Sentinel-1 data for a shorter time window around each date
+def process_single_date(date, longitude, latitude):
+    try:
+        box_deg = 0.0004
         window_start = date - timedelta(days=6)
         window_end = date + timedelta(days=6)
 
-        vv_vals, vh_vals = [], []
-
-        # Load data
         catalog = Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
         search = catalog.search(
             collections=["sentinel-1-rtc"],
@@ -77,6 +71,7 @@ def get_rvi(longitude, latitude, season, harvest_date, interval_days=12):
             datetime=f"{window_start.strftime('%Y-%m-%d')}/{window_end.strftime('%Y-%m-%d')}")
 
         items = list(search.get_all_items())
+        vv_vals, vh_vals = [], []
 
         for item in items:
             dt = stac_load(
@@ -96,22 +91,52 @@ def get_rvi(longitude, latitude, season, harvest_date, interval_days=12):
             mean_vv = np.mean(vv_vals)
             mean_vh = np.mean(vh_vals)
 
-            # Calculate RVI
             dop = mean_vv / (mean_vv + mean_vh)
             rvi = (np.sqrt(dop)) * ((4 * mean_vh) / (mean_vv + mean_vh))
+            return rvi
+        return None
 
-            rvi_values.append(rvi)
+    except Exception as e:
+        logging.error(f"Error processing date {date}: {e}")
+        return None
+
+
+def get_rvi_parallel(longitude, latitude, season, harvest_date, interval_days=12):
+    plant_date = find_plant_date(season, harvest_date)
+    plant_date = pd.to_datetime(plant_date, dayfirst=True)
+    harvest_date = pd.to_datetime(harvest_date, dayfirst=True)
+
+    # Generate dates
+    dates = []
+    current_date = plant_date
+    while current_date <= harvest_date:
+        dates.append(current_date)
+        current_date += timedelta(days=interval_days)
+
+    # Parallel processing
+    rvi_values = []
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+        future_to_date = {
+            executor.submit(process_single_date, date, longitude, latitude): date
+            for date in dates
+        }
+
+        for future in as_completed(future_to_date):
+            rvi = future.result()
+            if rvi is not None:
+                rvi_values.append(rvi)
 
     # Calculate RVI features
     rvi_values = np.array(rvi_values)
-    mean_rvi = np.mean(rvi_values) if len(rvi_values) > 0 else np.nan
-    # std_rvi = np.std(rvi_values) if len(rvi_values) > 0 else np.nan
-    # max_rvi = np.max(rvi_values) if len(rvi_values) > 0 else np.nan
-    # min_rvi = np.min(rvi_values) if len(rvi_values) > 0 else np.nan
-    # range_rvi = max_rvi - min_rvi if len(rvi_values) > 0 else np.nan
+    return (
+        np.mean(rvi_values) if len(rvi_values) > 0 else np.nan,
+        np.std(rvi_values) if len(rvi_values) > 0 else np.nan,
+        np.max(rvi_values) if len(rvi_values) > 0 else np.nan,
+        np.min(rvi_values) if len(rvi_values) > 0 else np.nan,
+        np.max(rvi_values) - np.min(rvi_values) if len(rvi_values) > 0 else np.nan
+    )
 
 
-    return mean_rvi
 # Test
-# rvi = get_rvi(105.248554, 10.510542, "SA", "15-07-2023")
-# print(rvi)
+# rvi, std_rvi, max_rvi, min_rvi, range_rvi = get_rvi_parallel(105.248554, 10.510542, "WS", "28-04-2023")
+# print(f"RVI: {rvi}, Std: {std_rvi}, Max: {max_rvi}, Min: {min_rvi}, Range: {range_rvi}")

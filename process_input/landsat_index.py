@@ -4,6 +4,8 @@ warnings.filterwarnings('ignore')
 
 # Import common GIS tools
 import numpy as np
+import pandas as pd
+
 # Import Planetary Computer tools
 import pystac_client
 import planetary_computer as pc
@@ -45,110 +47,226 @@ def get_flags_to_mask(mask, flags):
   return combine_flag_mask
 
 # find window_size
-def find_window_size(season, harvest_date):
-    logger = logging.getLogger(__name__)
-    try:
-        date_obj = datetime.strptime(harvest_date, '%d-%m-%Y')
-        doh = date_obj.strftime('%Y-%m-%d')  # date of harvest
-        year = date_obj.year
+# def find_window_size(season, harvest_date):
+#     logger = logging.getLogger(__name__)
+#     try:
+#         date_obj = datetime.strptime(harvest_date, '%d-%m-%Y')
+#         today = datetime.today()
+#
+#         # If harvest date is in future, use today's date
+#         if date_obj > today:
+#             date_obj = today
+#
+#         year = date_obj.year
+#         month = date_obj.month
+#         doh = date_obj.strftime('%Y-%m-%d')  # date of harvest
+#
+#         if season == "WS":
+#             # For WS, if current month is after October, use current year
+#             # Otherwise, use previous year
+#             if month >= 11:
+#                 window_start = f"{year}-11-01"
+#             else:
+#                 window_start = f"{year - 1}-11-01"
+#
+#             window_size = f"{window_start}/{doh}"
+#             logger.info(f"Window size for WS: {window_size}")
+#
+#         elif season == "SA":
+#             window_size = f"{year}-04-01/{doh}"
+#             logger.info(f"Window size for SA: {window_size}")
+#
+#         else:
+#             raise ValueError(f"Invalid season: {season}")
+#
+#         return window_size
+#
+#     except Exception as e:
+#         logger.error(f"Error in find_window_size: {e}", exc_info=True)
+#         raise
 
-        if season == "SA":
-            window_size = f"{year}-04-01/{doh}"
-            logger.info(f"Window size for SA: {window_size}")
-        elif season == "WS":
-            window_size = f"{year - 1}-11-01/{doh}"
-            logger.info(f"Window size for WS: {window_size}")
-        else:
-            raise ValueError(f"Invalid season: {season}")
+# def get_ls_index(longitude, latitude, season, date, box_deg=0.10):
+#     logger = logging.getLogger(__name__)
+#
+#     try:
+#         # Check if date is in the future
+#         date_obj = datetime.strptime(date, '%d-%m-%Y')
+#         today = datetime.today()
+#         if date_obj > today:
+#             date = today.strftime('%d-%m-%Y')
+#             logger.warning(f"Date is in the future. Using today's date: {date}")
+#         logger.info(
+#             f"Fetching LS index for Longitude: {longitude}, Latitude: {latitude}, Season: {season}, Date: {date}")
+#         catalog = pystac_client.Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
+#
+#         time_range = find_window_size(season, date)
+#         logger.info(f"Time range: {time_range}")
+#
+#         bbox = [
+#             longitude - box_deg / 2,
+#             latitude - box_deg / 2,
+#             longitude + box_deg / 2,
+#             latitude + box_deg / 2
+#         ]
+#         logger.info(f"BBox: {bbox}")
+#
+#         # Search for relevant satellite images from the catalog
+#         search = catalog.search(
+#             collections=["landsat-c2-l2"],
+#             bbox=bbox,
+#             datetime=time_range,
+#             query={
+#                 'eo:cloud_cover': {"lt": 10},  # 10% cloud cover
+#                 'platform': {"in": ["landsat-8", "landsat-9"]}
+#             })
+#         items = search.get_all_items()
+#         if not items:
+#             logger.warning("No images found.")
+#             return np.nan, np.nan, np.nan, np.nan
+#         logger.info(f"Found {len(items)} images")
+#
+#         # Select the image with the least cloud cover
+#         selected_item = min(items, key=lambda item: eo.ext(item).cloud_cover)
+#         bands_interest = ['red', 'nir08', 'qa_pixel', 'green', 'blue', 'swir16']
+#
+#         xx = stac_load(
+#             [selected_item],
+#             bands=bands_interest,
+#             crs='EPSG:4326',
+#             resolution=30 / 111320,
+#             patch_url=pc.sign,
+#             bbox=bbox).isel(time=0)
+#
+#         # Apply scaling and offset for the bands
+#         xx['red'] = xx['red'] * 0.0000275 - 0.2
+#         xx['nir08'] = xx['nir08'] * 0.0000275 - 0.2
+#         xx['green'] = xx['green'] * 0.0000275 - 0.2
+#         xx['blue'] = xx['blue'] * 0.0000275 - 0.2
+#         xx['swir16'] = xx['swir16'] * 0.0000275 - 0.2
+#
+#         # Mask invalid data
+#         quality_mask = get_flags_to_mask(xx['qa_pixel'],
+#                                          ['fill', 'dilated_cloud', 'cirrus', 'cloud', 'shadow', 'water'])
+#         masked_data = xx.where(~quality_mask)
+#         clean_data = masked_data.mean(dim=['longitude', 'latitude']).compute()
+#
+#         # Cleaned bands
+#         nir08 = clean_data.nir08.item()
+#         red = clean_data.red.item()
+#         green = clean_data.green.item()
+#         blue = clean_data.blue.item()
+#         swir16 = clean_data.swir16.item()
+#
+#         # Calculate index
+#         ndvi = (nir08 - red) / (nir08 + red)
+#         ndwi = (green - swir16) / (green + swir16)
+#         avi = np.power((nir08 * (1 - red) * (nir08 - red)), 1 / 3)
+#         ndmi = (nir08 - swir16) / (nir08 + swir16)
+#
+#         logger.info(f"Indices calculated - NDVI: {ndvi}, NDWI: {ndwi}, AVI: {avi}, NDMI: {ndmi}")
+#         return ndvi, ndwi, avi, ndmi
+#
+#     except Exception as e:
+#         logger.error(f"Error in get_ls_index: {e}", exc_info=True)
+#         raise
 
-        return window_size
+def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6, C2=7.5, L_evi=1):
+    # Set a time window for 8 days before & after the date of harvest
+    harvest_date = pd.to_datetime(harvest_date, dayfirst=True)
 
-    except Exception as e:
-        logger.error(f"Error in find_window_size ls: {e}", exc_info=True)
-        raise
+    day_offset = pd.Timedelta(days=8)
+    today = pd.Timestamp.today()
+    if harvest_date > today:
+        harvest_date = today
+        start_date = harvest_date - day_offset*2
+        end_date = harvest_date
+        time_range = f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
+    else:
+        start_date = harvest_date - day_offset
+        end_date = harvest_date + day_offset
+        time_range = f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
 
-def get_ls_index(longitude, latitude, season, date, box_deg=0.10):
-    logger = logging.getLogger(__name__)
+    bbox = [lon - box_deg / 2, lat - box_deg / 2, lon + box_deg / 2, lat + box_deg / 2]
+    catalog = pystac_client.Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
+    # Search and load data from Landsat
+    search = catalog.search(
+        collections=["landsat-c2-l2"],
+        bbox=bbox,
+        datetime=time_range,
+        query={'platform': {"in": ["landsat-8", "landsat-9"]}}
+    )
+    items = list(search.get_all_items())
 
-    try:
-        logger.info(
-            f"Fetching LS index for Longitude: {longitude}, Latitude: {latitude}, Season: {season}, Date: {date}")
-        catalog = pystac_client.Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
+    if not items:
+        return None
 
-        time_range = find_window_size(season, date)
-        logger.info(f"Time range: {time_range}")
+    # Load bands of interest and mask
+    xx = stac_load(
+        items,
+        bands=['red', 'nir08', 'qa_pixel', 'green', 'blue', 'swir16'],
+        crs='EPSG:4326',
+        resolution=30 / 111320,
+        patch_url=pc.sign,
+        bbox=bbox
+    )
 
-        bbox = [
-            longitude - box_deg / 2,
-            latitude - box_deg / 2,
-            longitude + box_deg / 2,
-            latitude + box_deg / 2
-        ]
-        logger.info(f"BBox: {bbox}")
+    # Apply scaling and offset
+    xx['red'] = xx['red'] * 0.0000275 - 0.2
+    xx['nir08'] = xx['nir08'] * 0.0000275 - 0.2
+    xx['green'] = xx['green'] * 0.0000275 - 0.2
+    xx['blue'] = xx['blue'] * 0.0000275 - 0.2
+    xx['swir16'] = xx['swir16'] * 0.0000275 - 0.2
 
-        # Search for relevant satellite images from the catalog
-        search = catalog.search(
-            collections=["landsat-c2-l2"],
-            bbox=bbox,
-            datetime=time_range,
-            query={
-                'eo:cloud_cover': {"lt": 10},  # 10% cloud cover
-                'platform': {"in": ["landsat-8", "landsat-9"]}
-            })
-        items = search.get_all_items()
-        if not items:
-            logger.warning("No images found.")
-            return np.nan, np.nan, np.nan, np.nan
-        logger.info(f"Found {len(items)} images")
+    # Create mask
+    quality_mask = get_flags_to_mask(xx['qa_pixel'], ['fill', 'dilated_cloud', 'cirrus', 'cloud', 'shadow', 'water'])
 
-        # Select the image with the least cloud cover
-        selected_item = min(items, key=lambda item: eo.ext(item).cloud_cover)
-        bands_interest = ['red', 'nir08', 'qa_pixel', 'green', 'blue', 'swir16']
+    masked_data = xx.where(~quality_mask)
+    clean_data = masked_data.mean(dim=['longitude', 'latitude']).compute()
 
-        xx = stac_load(
-            [selected_item],
-            bands=bands_interest,
-            crs='EPSG:4326',
-            resolution=30 / 111320,
-            patch_url=pc.sign,
-            bbox=bbox).isel(time=0)
+    # Calculate indices
+    ndvi = (clean_data.nir08 - clean_data.red) / (clean_data.nir08 + clean_data.red)
+    savi = ((clean_data.nir08 - clean_data.red) / (clean_data.nir08 + clean_data.red + L_savi)) * (1 + L_savi)
+    evi = 2.5 * ((clean_data.nir08 - clean_data.red) / (
+                clean_data.nir08 + C1 * clean_data.red - C2 * clean_data.blue + L_evi))
+    ndwi = (clean_data.green - clean_data.swir16) / (clean_data.green + clean_data.swir16)
+    avi = np.power((clean_data.nir08 * (1 - clean_data.red) * (clean_data.nir08 - clean_data.red)), 1 / 3)
+    ndmi = (clean_data.nir08 - clean_data.swir16) / (clean_data.nir08 + clean_data.swir16)
+    albedo = 0.356 * clean_data.blue + 0.130 * clean_data.green + 0.373 * clean_data.red + 0.085 * clean_data.nir08 + 0.072 * clean_data.swir16 + 0.0018
 
-        # Apply scaling and offset for the bands
-        xx['red'] = xx['red'] * 0.0000275 - 0.2
-        xx['nir08'] = xx['nir08'] * 0.0000275 - 0.2
-        xx['green'] = xx['green'] * 0.0000275 - 0.2
-        xx['blue'] = xx['blue'] * 0.0000275 - 0.2
-        xx['swir16'] = xx['swir16'] * 0.0000275 - 0.2
+    # Extract values
+    savi_vals = savi.values
+    evi_vals = evi.values
+    ndwi_vals = ndwi.values
+    avi_vals = avi.values
+    ndmi_vals = ndmi.values
+    albedo_vals = albedo.values
+    ndvi_vals = ndvi.values
 
-        # Mask invalid data
-        quality_mask = get_flags_to_mask(xx['qa_pixel'],
-                                         ['fill', 'dilated_cloud', 'cirrus', 'cloud', 'shadow', 'water'])
-        masked_data = xx.where(~quality_mask)
-        clean_data = masked_data.mean(dim=['longitude', 'latitude']).compute()
+# Calculate and return means
+    means = {
+        'mean_savi': np.mean(savi_vals),
+        'mean_evi': np.mean(evi_vals),
+        'mean_ndwi': np.mean(ndwi_vals),
+        'mean_avi': np.mean(avi_vals),
+        'mean_ndmi': np.mean(ndmi_vals),
+        'mean_albedo': np.mean(albedo_vals),
+        'mean_ndvi': np.mean(ndvi_vals)
+    }
 
-        # Cleaned bands
-        nir08 = clean_data.nir08.item()
-        red = clean_data.red.item()
-        green = clean_data.green.item()
-        blue = clean_data.blue.item()
-        swir16 = clean_data.swir16.item()
-
-        # Calculate index
-        ndvi = (nir08 - red) / (nir08 + red)
-        ndwi = (green - swir16) / (green + swir16)
-        avi = np.power((nir08 * (1 - red) * (nir08 - red)), 1 / 3)
-        ndmi = (nir08 - swir16) / (nir08 + swir16)
-
-        logger.info(f"Indices calculated - NDVI: {ndvi}, NDWI: {ndwi}, AVI: {avi}, NDMI: {ndmi}")
-        return ndvi, ndwi, avi, ndmi
-
-    except Exception as e:
-        logger.error(f"Error in get_ls_index: {e}", exc_info=True)
-        raise
-
+    print(means)
+    return (
+        means['mean_savi'],
+        means['mean_evi'],
+        means['mean_ndvi'],
+        means['mean_ndwi'],
+        means['mean_avi'],
+        means['mean_ndmi'],
+        means['mean_albedo']
+    )
+# mean_savi, mean_evi, mean_ndvi, mean_ndwi, mean_avi, mean_ndmi, mean_albedo = process_landsat_data("30-12-2024",  105.248554,10.510542 )
 # Test the function
-# ndvi, ndwi, avi, ndmi = get_ls_index(105.248554,10.510542, "SA", "15-07-2023"  )
-# print(ndvi, ndwi, avi, ndmi)
+# savi, evi, ndvi, ndwi, alberdo, ndmi = process_landsat_data("30-12-2024",  105.248554,10.510542 )
+# print(savi, evi, ndvi, ndwi, alberdo, ndmi)
 
-# date = find_window_size("WS", "15-07-2023")
+# date = find_window_size("WS", "23-11-2024")
 # print(date)

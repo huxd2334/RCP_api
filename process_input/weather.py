@@ -1,13 +1,17 @@
+from turtledemo.penrose import start
+
 import pandas as pd
 import requests
 from datetime import datetime
 from statistics import mean
 import logging
 
+from sympy.strategies.core import switch
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-VC_API_KEY = ""
+VC_API_KEY = "3NDWEP3GJVMRCSVRRZS6BT59K"
 
 def api_call(location, start_date, end_date):
     print('Fetching data for location: {} from {} to {}'.format(location, start_date, end_date))
@@ -26,31 +30,48 @@ def api_call(location, start_date, end_date):
 def get_start_date(season, harvest_date):
     try:
         date_obj = datetime.strptime(harvest_date, '%d-%m-%Y')
+        today = datetime.today()
+
+        # If harvest date is in the future, use today's date
+        if date_obj > today:
+            date_obj = today
+
         year = date_obj.year
         month = date_obj.month
+
         if season == "SA":
-            start_date = f"{year}-04-01"
-        elif (season == "WS" and month < 11):
-            return None
-        else:
-            start_date = f"{year}-11-01"
-        return start_date
+            # Summer Agricultural season always starts on April 1st
+            return f"{year}-04-01"
+
+        elif season == "WS":
+            # Winter Season logic
+            if month >= 11:
+                return f"{year}-11-01"
+            elif month <= 5:
+                return f"{year - 1}-11-01"
+            else:
+                return None
+
     except Exception as e:
-        logger.error(f"Error in get_start_date at weather.py: {e}", exc_info=True)
+        logger.error(f"Error in get_start_date: {e}", exc_info=True)
         return None
-# print(get_start_date("WS", "18-11-2022"))
+# print(get_start_date("WS", "23-11-2024"))
 
 def get_weather_data(longitude, latitude, season, date):
     # features = ['tempmax', 'tempmin', 'temp', 'dew', 'humidity', 'precip',
     #             'precipcover', 'windgust', 'windspeed', 'pressure', 'cloudcover',
     #             'solarradiation', 'solarenergy', 'uvindex', 'sunrise', 'sunset']
     try:
-        features = ['datetime', 'precip']
+        features = ['datetime', 'precip','tempmax', 'tempmin', 'dew', 'temp', 'precipcover','pressure','solarradiation', 'solarenergy', 'uvindex',  ]
         start_date = get_start_date(season, date)
+        print(start_date)
         if start_date is None:
-            logger.error('Invalid start date')
+            logger.error('Invalid start date for weather data')
             return None
         end_date = datetime.strptime(date, '%d-%m-%Y').strftime('%Y-%m-%d')
+        today = datetime.today().strftime('%Y-%m-%d')
+        if end_date > today:
+            end_date = today
         location = f"{latitude},{longitude}"
         data = api_call(location, start_date, end_date)
         if data is None:
@@ -60,11 +81,23 @@ def get_weather_data(longitude, latitude, season, date):
         df = df[features]
         df['datetime'] = pd.to_datetime(df['datetime'])
         precip = mean(df['precip'])
-        return precip
+        tempmax = mean(df['tempmax'])
+        tempmin = mean(df['tempmin'])
+        temp = mean(df['temp'])
+        dew = mean(df['dew'])
+        precipcover = mean(df['precipcover'])
+        pressure = mean(df['pressure'])
+        solarradiation = mean(df['solarradiation'])
+        solarenergy = mean(df['solarenergy'])
+        uvindex = mean(df['uvindex'])
+
+        return  tempmax, tempmin, temp, dew, precip,precipcover, pressure, solarradiation, solarenergy, uvindex
     except Exception as e:
         logger.error(f"Error in get_weather_data: {e}", exc_info=True)
         return None
 
 
-# get_weather_data(105.248554, 10.510542, 'WS', "2023-04-15")
+# tempmax, tempmin, temp, dew, precip,precipcover, pressure, solarradiation, solarenergy, uvindex = get_weather_data(105.248554, 10.510542, 'WS', "23-11-2024")
+# print(tempmax, tempmin, temp, dew, precip,precipcover, pressure, solarradiation, solarenergy, uvindex)
+
 # print(start, end)

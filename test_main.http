@@ -15,9 +15,9 @@ Accept: application/json
 Content-Type: application/json
 
 {
-  "Date_of_Harvest": "2023-07-15",
+  "Date_of_Harvest": "2025-04-15",
   "District": "District_Chau_Phu",
-  "Season": "Season(SA = Summer Autumn, WS = Winter Spring)_SA",
+  "Season": "Season(SA = Summer Autumn, WS = Winter Spring)_WS",
   "Latitude": 10.510542,
   "Longitude": 105.248554,
   "Field_size_ha": 3.4,
