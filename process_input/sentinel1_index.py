@@ -1,9 +1,13 @@
-# Supress Warnings
 import warnings
+
+import pystac_client
+from sklearn.preprocessing import MinMaxScaler
+
 warnings.filterwarnings('ignore')
 
 # Import common GIS tools
 import numpy as np
+
 import os
 # Import Planetary Computer tools
 from pystac_client import Client
@@ -11,132 +15,118 @@ import planetary_computer as pc
 from odc.stac import stac_load
 import logging
 import pandas as pd
-from datetime import timedelta
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-PC_API_KEY = ""
+PC_API_KEY = "st=2024-10-30T04%3A39%3A47Z&se=2024-10-31T05%3A24%3A47Z&sp=rl&sv=2024-05-04&sr=c&skoid=9c8ff44a-6a2c-4dfb-b298-1c9212f64d9a&sktid=72f988bf-86f1-41af-91ab-2d7cd011db47&skt=2024-10-31T01%3A20%3A26Z&ske=2024-11-07T01%3A20%3A26Z&sks=b&skv=2024-05-04&sig=yxW50NrgqfNEwh6gA5GpPmjbepQ0PP8d0LIG7B5GgAU%3D"
 pc.settings.set_subscription_key(PC_API_KEY)
 
-from datetime import datetime
+# calculate rvi index
+def extract_sen1_data(lon, lat, date):
+    A = 0.71
+    B = 1.40
+    box_size_deg = 0.0004 # ~ 5x5 px
+    resolution = 10 # meters per px
+    scale = resolution / 111320.0 # degrees per px
+
+  # Load the data using Open Data Cube for each location
+    date_object = datetime.strptime(date, "%d-%m-%Y")
+    today  = datetime.today()
+
+    if date_object > today:
+        date_object = today
+        print(f"Date is in the future. Using today's date: {date_object}")
+        time_delta = timedelta(days=11)
+        start_date = date_object - time_delta
+        end_date = date_object
+        time_window = f"{start_date.isoformat()}/{end_date.isoformat()}"
+    else:
+        time_delta = timedelta(days=6)
+        start_date = date_object - time_delta
+        end_date = date_object + time_delta
+        time_window = f"{start_date.isoformat()}/{end_date.isoformat()}"
+
+    bbox = (lon - box_size_deg/2, lat - box_size_deg/2, lon + box_size_deg/2, lat + box_size_deg/2)
+
+    catalog = pystac_client.Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
+    search = catalog.search(collections=["sentinel-1-rtc"], bbox=bbox, datetime=time_window)
+    items = list(search.get_all_items())
+    data = stac_load(items, bands=["vv", "vh"], patch_url=pc.sign, bbox=bbox, crs="EPSG:4326", resolution=scale)
+
+    # Extract VV and VH arrays
+    vv_array = data.vv.compute().values
+    vh_array = data.vh.compute().values
+    vv_mean = np.nanmean(vv_array)
+
+    # Calculate RVI array
+    rvi_array = (4 * vh_array / (vv_array + vh_array))
+
+    # Calculate Soil moisture index
+    dop_array = vv_array / (vv_array + vh_array)
+    sm_array = 1 - ((10 ** (0.1 * dop_array)) / A) ** B
+
+    # rvi_flat = rvi_array.flatten()
+    # rvi_flat = rvi_flat[~np.isnan(rvi_flat)]  # Remove NaN values
+    # rvi_flat = rvi_flat.reshape(-1, 1)  # Reshape for scaler
+    #
+    # # Scale RVI between 0 and 1
+    # rvi_scaler = MinMaxScaler(feature_range=(0, 1))
+    # try:
+    #     rvi_scaled = rvi_scaler.fit_transform(rvi_flat)
+    #     rvi_mean = np.nanmean(rvi_scaled)
+    # except Exception as e:
+    #     logger.error(f"Error in scaling RVI: {e}")
+    #     rvi_mean = np.nan
+    #
+    # sm_flat = sm_array.flatten()
+    # sm_flat = sm_flat[~np.isnan(sm_flat)]  # Remove NaN values
+    # sm_flat = sm_flat.reshape(-1, 1)  # Reshape for scaler
+    #
+    # # Scale RVI between 0 and 1
+    # sm_scaler = MinMaxScaler(feature_range=(0, 1))
+    # try:
+    #     sm_scaled = sm_scaler.fit_transform(sm_flat)
+    #     sm_mean = np.nanmean(sm_scaled)
+    # except Exception as e:
+    #     logger.error(f"Error in scaling SM: {e}")
+    #     sm_mean = np.nan
+    #
+    # print(f"RVI: {rvi_mean}")
+    # print(f"VV: {vv_mean}")
+    # print(f"SM: {sm_mean}")
+    def scale_data(array):
+        flat_array = array.flatten()
+        flat_array = flat_array[~np.isnan(flat_array)]  # Remove NaN values
+        flat_array = flat_array.reshape(-1, 1)  # Reshape for scaler
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        try:
+            scaled = scaler.fit_transform(flat_array)
+            mean = np.nanmean(scaled)
+        except Exception as e:
+            logger.error(f"Error in scaling data: {e}")
+            mean = np.nan
+        return mean
+
+    with ThreadPoolExecutor() as executor:
+        rvi_future = executor.submit(scale_data, rvi_array)
+        sm_future = executor.submit(scale_data, sm_array)
+
+        rvi_mean = rvi_future.result()
+        sm_mean = sm_future.result()
+
+    logger.info(f"RVI: {rvi_mean}")
+    logger.info(f"VV: {vv_mean}")
+    logger.info(f"SM: {sm_mean}")
+    return rvi_mean, sm_mean, vv_mean
 
 
-def find_plant_date(season, harvest_date):
-    logger = logging.getLogger(__name__)
-    try:
-        date_obj = datetime.strptime(harvest_date, '%d-%m-%Y')
-        today = datetime.today()
-
-        # If harvest date is in future, use today's date
-        if date_obj > today:
-            date_obj = today
-
-        year = date_obj.year
-        month = date_obj.month
-
-        if season == "SA":
-            plant_date = f"01-04-{year}"
-            logger.info(f"Plant Date for SA: {plant_date}")
-        elif season == "WS":
-            # For WS, if current month is after October, use current year
-            # Otherwise, use previous year
-            if month >= 11:
-                plant_date = f"01-11-{year}"
-            else:
-                plant_date = f"01-11-{year - 1}"
-            logger.info(f"Plant Date for WS: {plant_date}")
-        else:
-            raise ValueError(f"Invalid season: {season}")
-
-        return plant_date
-
-    except Exception as e:
-        logger.error(f"Error in find_plant_date: {e}", exc_info=True)
-        raise
+# extract_sen1_data(105.192464	, 10.467721, "15-07-2022")
 
 
-def process_single_date(date, longitude, latitude):
-    try:
-        box_deg = 0.0004
-        window_start = date - timedelta(days=6)
-        window_end = date + timedelta(days=6)
-
-        catalog = Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
-        search = catalog.search(
-            collections=["sentinel-1-rtc"],
-            bbox=[longitude - box_deg / 2, latitude - box_deg / 2,
-                  longitude + box_deg / 2, latitude + box_deg / 2],
-            datetime=f"{window_start.strftime('%Y-%m-%d')}/{window_end.strftime('%Y-%m-%d')}")
-
-        items = list(search.get_all_items())
-        vv_vals, vh_vals = [], []
-
-        for item in items:
-            dt = stac_load(
-                [item],
-                bands=["vv", "vh"],
-                patch_url=pc.sign,
-                bbox=[longitude - box_deg / 2, latitude - box_deg / 2,
-                      longitude + box_deg / 2, latitude + box_deg / 2],
-                crs="EPSG:4326",
-                resolution=10 / 111320.0)
-
-            if np.all(dt["vv"].values != -32768.0) and np.all(dt["vh"].values != -32768.0):
-                vv_vals.append(np.mean(dt["vv"].astype("float64")))
-                vh_vals.append(np.mean(dt["vh"].astype("float64")))
-
-        if vv_vals and vh_vals:
-            mean_vv = np.mean(vv_vals)
-            mean_vh = np.mean(vh_vals)
-
-            dop = mean_vv / (mean_vv + mean_vh)
-            rvi = (np.sqrt(dop)) * ((4 * mean_vh) / (mean_vv + mean_vh))
-            return rvi
-        return None
-
-    except Exception as e:
-        logging.error(f"Error processing date {date}: {e}")
-        return None
 
 
-def get_rvi_parallel(longitude, latitude, season, harvest_date, interval_days=12):
-    plant_date = find_plant_date(season, harvest_date)
-    plant_date = pd.to_datetime(plant_date, dayfirst=True)
-    harvest_date = pd.to_datetime(harvest_date, dayfirst=True)
-
-    # Generate dates
-    dates = []
-    current_date = plant_date
-    while current_date <= harvest_date:
-        dates.append(current_date)
-        current_date += timedelta(days=interval_days)
-
-    # Parallel processing
-    rvi_values = []
-    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-        future_to_date = {
-            executor.submit(process_single_date, date, longitude, latitude): date
-            for date in dates
-        }
-
-        for future in as_completed(future_to_date):
-            rvi = future.result()
-            if rvi is not None:
-                rvi_values.append(rvi)
-
-    # Calculate RVI features
-    rvi_values = np.array(rvi_values)
-    return (
-        np.mean(rvi_values) if len(rvi_values) > 0 else np.nan,
-        np.std(rvi_values) if len(rvi_values) > 0 else np.nan,
-        np.max(rvi_values) if len(rvi_values) > 0 else np.nan,
-        np.min(rvi_values) if len(rvi_values) > 0 else np.nan,
-        np.max(rvi_values) - np.min(rvi_values) if len(rvi_values) > 0 else np.nan
-    )
 
 
-# Test
-# rvi, std_rvi, max_rvi, min_rvi, range_rvi = get_rvi_parallel(105.248554, 10.510542, "WS", "28-04-2023")
-# print(f"RVI: {rvi}, Std: {std_rvi}, Max: {max_rvi}, Min: {min_rvi}, Range: {range_rvi}")

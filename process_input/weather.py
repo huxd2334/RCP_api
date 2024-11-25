@@ -11,10 +11,9 @@ from sympy.strategies.core import switch
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-VC_API_KEY = "3NDWEP3GJVMRCSVRRZS6BT59K"
+VC_API_KEY = "847HAYRZZ98AQW9MJKRV2FPAW"
 
 def api_call(location, start_date, end_date):
-    print('Fetching data for location: {} from {} to {}'.format(location, start_date, end_date))
     key=VC_API_KEY
     response = requests.request("GET", "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{}/{}/{}?unitGroup=metric&include=days&key={}&contentType=json".format(location, start_date, end_date, key ))
     if response.status_code != 200:
@@ -22,7 +21,6 @@ def api_call(location, start_date, end_date):
       return None
     # Parse the results as JSON
     jsonData = response.json()
-    # print(jsonData)
     return jsonData['days']
 
 # api_call('10.510542,105.248554', '2022-03-18', '2022-03-18')
@@ -31,7 +29,6 @@ def get_start_date(season, harvest_date):
     try:
         date_obj = datetime.strptime(harvest_date, '%d-%m-%Y')
         today = datetime.today()
-
         # If harvest date is in the future, use today's date
         if date_obj > today:
             date_obj = today
@@ -58,13 +55,9 @@ def get_start_date(season, harvest_date):
 # print(get_start_date("WS", "23-11-2024"))
 
 def get_weather_data(longitude, latitude, season, date):
-    # features = ['tempmax', 'tempmin', 'temp', 'dew', 'humidity', 'precip',
-    #             'precipcover', 'windgust', 'windspeed', 'pressure', 'cloudcover',
-    #             'solarradiation', 'solarenergy', 'uvindex', 'sunrise', 'sunset']
     try:
-        features = ['datetime', 'precip','tempmax', 'tempmin', 'dew', 'temp', 'precipcover','pressure','solarradiation', 'solarenergy', 'uvindex',  ]
+        features = ['humidity', 'datetime' ]
         start_date = get_start_date(season, date)
-        print(start_date)
         if start_date is None:
             logger.error('Invalid start date for weather data')
             return None
@@ -80,24 +73,15 @@ def get_weather_data(longitude, latitude, season, date):
         df = pd.DataFrame(data)
         df = df[features]
         df['datetime'] = pd.to_datetime(df['datetime'])
-        precip = mean(df['precip'])
-        tempmax = mean(df['tempmax'])
-        tempmin = mean(df['tempmin'])
-        temp = mean(df['temp'])
-        dew = mean(df['dew'])
-        precipcover = mean(df['precipcover'])
-        pressure = mean(df['pressure'])
-        solarradiation = mean(df['solarradiation'])
-        solarenergy = mean(df['solarenergy'])
-        uvindex = mean(df['uvindex'])
-
-        return  tempmax, tempmin, temp, dew, precip,precipcover, pressure, solarradiation, solarenergy, uvindex
+        humidity = mean(df['humidity'])
+        logger.info(f"Humidity: {humidity}")
+        return  humidity
     except Exception as e:
         logger.error(f"Error in get_weather_data: {e}", exc_info=True)
         return None
 
 
-# tempmax, tempmin, temp, dew, precip,precipcover, pressure, solarradiation, solarenergy, uvindex = get_weather_data(105.248554, 10.510542, 'WS', "23-11-2024")
-# print(tempmax, tempmin, temp, dew, precip,precipcover, pressure, solarradiation, solarenergy, uvindex)
+# x = get_weather_data(105.248554, 10.510542, 'WS', "23-11-2024")
+# print(x)
 
 # print(start, end)

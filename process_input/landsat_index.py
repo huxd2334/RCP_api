@@ -1,7 +1,6 @@
 # Supress Warnings
 import warnings
 warnings.filterwarnings('ignore')
-
 # Import common GIS tools
 import numpy as np
 import pandas as pd
@@ -12,7 +11,7 @@ import planetary_computer as pc
 from odc.stac import stac_load
 from pystac.extensions.eo import EOExtension as eo
 
-PC_API_KEY = ""
+PC_API_KEY = "st=2024-10-30T04%3A39%3A47Z&se=2024-10-31T05%3A24%3A47Z&sp=rl&sv=2024-05-04&sr=c&skoid=9c8ff44a-6a2c-4dfb-b298-1c9212f64d9a&sktid=72f988bf-86f1-41af-91ab-2d7cd011db47&skt=2024-10-31T01%3A20%3A26Z&ske=2024-11-07T01%3A20%3A26Z&sks=b&skv=2024-05-04&sig=yxW50NrgqfNEwh6gA5GpPmjbepQ0PP8d0LIG7B5GgAU%3D"
 pc.settings.set_subscription_key(PC_API_KEY)
 # Others
 from datetime import datetime
@@ -37,12 +36,9 @@ bit_flags = {
 
 # func: mask pixels with a give type:
 def get_flags_to_mask(mask, flags):
-   # Initialize a mask to store results with the same shape as the input mask
   combine_flag_mask = np.zeros_like(mask, dtype=bool)
   for flag in flags:
-    # Compute the mask for the current flag
     current_flag_mask = np.bitwise_and(mask, bit_flags[flag])>0
-    # Combine the current flag mask with the overall result mask
     combine_flag_mask = combine_flag_mask | current_flag_mask
   return combine_flag_mask
 
@@ -79,7 +75,7 @@ def get_flags_to_mask(mask, flags):
 #         else:
 #             raise ValueError(f"Invalid season: {season}")
 #
-#         return window_size
+        # return window_size
 #
 #     except Exception as e:
 #         logger.error(f"Error in find_window_size: {e}", exc_info=True)
@@ -171,6 +167,7 @@ def get_flags_to_mask(mask, flags):
 #         raise
 
 def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6, C2=7.5, L_evi=1):
+    # start_time = time.time()  # Start timing
     # Set a time window for 8 days before & after the date of harvest
     harvest_date = pd.to_datetime(harvest_date, dayfirst=True)
 
@@ -196,7 +193,6 @@ def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6,
         query={'platform': {"in": ["landsat-8", "landsat-9"]}}
     )
     items = list(search.get_all_items())
-
     if not items:
         return None
 
@@ -226,12 +222,11 @@ def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6,
     # Calculate indices
     ndvi = (clean_data.nir08 - clean_data.red) / (clean_data.nir08 + clean_data.red)
     savi = ((clean_data.nir08 - clean_data.red) / (clean_data.nir08 + clean_data.red + L_savi)) * (1 + L_savi)
-    evi = 2.5 * ((clean_data.nir08 - clean_data.red) / (
-                clean_data.nir08 + C1 * clean_data.red - C2 * clean_data.blue + L_evi))
+    evi = 2.5 * ((clean_data.nir08 - clean_data.red) / (clean_data.nir08 + C1 * clean_data.red - C2 * clean_data.blue + L_evi))
     ndwi = (clean_data.green - clean_data.swir16) / (clean_data.green + clean_data.swir16)
     avi = np.power((clean_data.nir08 * (1 - clean_data.red) * (clean_data.nir08 - clean_data.red)), 1 / 3)
     ndmi = (clean_data.nir08 - clean_data.swir16) / (clean_data.nir08 + clean_data.swir16)
-    albedo = 0.356 * clean_data.blue + 0.130 * clean_data.green + 0.373 * clean_data.red + 0.085 * clean_data.nir08 + 0.072 * clean_data.swir16 + 0.0018
+    # albedo = 0.356 * clean_data.blue + 0.130 * clean_data.green + 0.373 * clean_data.red + 0.085 * clean_data.nir08 + 0.072 * clean_data.swir16 + 0.0018
 
     # Extract values
     savi_vals = savi.values
@@ -239,7 +234,7 @@ def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6,
     ndwi_vals = ndwi.values
     avi_vals = avi.values
     ndmi_vals = ndmi.values
-    albedo_vals = albedo.values
+    # albedo_vals = albedo.values
     ndvi_vals = ndvi.values
 
 # Calculate and return means
@@ -249,11 +244,13 @@ def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6,
         'mean_ndwi': np.mean(ndwi_vals),
         'mean_avi': np.mean(avi_vals),
         'mean_ndmi': np.mean(ndmi_vals),
-        'mean_albedo': np.mean(albedo_vals),
+        # 'mean_albedo': np.mean(albedo_vals),
         'mean_ndvi': np.mean(ndvi_vals)
     }
-
-    print(means)
+    # end_time = time.time()  # End timing
+    # elapsed_time = end_time - start_time
+    # logger.info(f"Function process_landsat_data took {elapsed_time:.2f} seconds to execute")
+    logger.info(f"Means: {means}")
     return (
         means['mean_savi'],
         means['mean_evi'],
@@ -261,12 +258,15 @@ def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6,
         means['mean_ndwi'],
         means['mean_avi'],
         means['mean_ndmi'],
-        means['mean_albedo']
+        # means['mean_albedo']
     )
-# mean_savi, mean_evi, mean_ndvi, mean_ndwi, mean_avi, mean_ndmi, mean_albedo = process_landsat_data("30-12-2024",  105.248554,10.510542 )
+
+
+
 # Test the function
-# savi, evi, ndvi, ndwi, alberdo, ndmi = process_landsat_data("30-12-2024",  105.248554,10.510542 )
-# print(savi, evi, ndvi, ndwi, alberdo, ndmi)
+# savi, evi, ndvi, ndwi, avi, ndmi = process_landsat_data("30-12-2024",  105.248554,10.510542 )
+# print(f"Savi: {savi}, EVI: {evi}, NDVI: {ndvi}, NDWI: {ndwi}, AVI: {avi}, NDMI: {ndmi}")
+
 
 # date = find_window_size("WS", "23-11-2024")
 # print(date)
