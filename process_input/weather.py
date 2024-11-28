@@ -56,7 +56,7 @@ def get_start_date(season, harvest_date):
 
 def get_weather_data(longitude, latitude, season, date):
     try:
-        features = ['humidity', 'datetime' ]
+        features = ['humidity', 'precip','datetime' ]
         start_date = get_start_date(season, date)
         if start_date is None:
             logger.error('Invalid start date for weather data')
@@ -74,8 +74,10 @@ def get_weather_data(longitude, latitude, season, date):
         df = df[features]
         df['datetime'] = pd.to_datetime(df['datetime'])
         humidity = mean(df['humidity'])
+        precip = mean(df['precip'])
         logger.info(f"Humidity: {humidity}")
-        return  humidity
+        logger.info(f"Precipitation: {precip}")
+        return  humidity, precip
     except Exception as e:
         logger.error(f"Error in get_weather_data: {e}", exc_info=True)
         return None

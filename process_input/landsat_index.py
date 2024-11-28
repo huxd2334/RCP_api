@@ -226,25 +226,25 @@ def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6,
     ndwi = (clean_data.green - clean_data.swir16) / (clean_data.green + clean_data.swir16)
     avi = np.power((clean_data.nir08 * (1 - clean_data.red) * (clean_data.nir08 - clean_data.red)), 1 / 3)
     ndmi = (clean_data.nir08 - clean_data.swir16) / (clean_data.nir08 + clean_data.swir16)
-    # albedo = 0.356 * clean_data.blue + 0.130 * clean_data.green + 0.373 * clean_data.red + 0.085 * clean_data.nir08 + 0.072 * clean_data.swir16 + 0.0018
+    albedo = 0.356 * clean_data.blue + 0.130 * clean_data.green + 0.373 * clean_data.red + 0.085 * clean_data.nir08 + 0.072 * clean_data.swir16 + 0.0018
 
     # Extract values
-    savi_vals = savi.values
-    evi_vals = evi.values
+    # savi_vals = savi.values
+    # evi_vals = evi.values
     ndwi_vals = ndwi.values
-    avi_vals = avi.values
+    # avi_vals = avi.values
     ndmi_vals = ndmi.values
-    # albedo_vals = albedo.values
+    albedo_vals = albedo.values
     ndvi_vals = ndvi.values
 
 # Calculate and return means
     means = {
-        'mean_savi': np.mean(savi_vals),
-        'mean_evi': np.mean(evi_vals),
+        # 'mean_savi': np.mean(savi_vals),
+        # 'mean_evi': np.mean(evi_vals),
         'mean_ndwi': np.mean(ndwi_vals),
-        'mean_avi': np.mean(avi_vals),
+        # 'mean_avi': np.mean(avi_vals),
         'mean_ndmi': np.mean(ndmi_vals),
-        # 'mean_albedo': np.mean(albedo_vals),
+        'mean_albedo': np.mean(albedo_vals),
         'mean_ndvi': np.mean(ndvi_vals)
     }
     # end_time = time.time()  # End timing
@@ -252,13 +252,13 @@ def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6,
     # logger.info(f"Function process_landsat_data took {elapsed_time:.2f} seconds to execute")
     logger.info(f"Means: {means}")
     return (
-        means['mean_savi'],
-        means['mean_evi'],
+        # means['mean_savi'],
+        # means['mean_evi'],
         means['mean_ndvi'],
         means['mean_ndwi'],
-        means['mean_avi'],
+        # means['mean_avi'],
         means['mean_ndmi'],
-        # means['mean_albedo']
+        means['mean_albedo']
     )
 
 
