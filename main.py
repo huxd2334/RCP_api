@@ -42,6 +42,7 @@ async def root():
     return {"message": "Hello World"}
 
 
+
 @app.post("/predict/")
 async def predict(data: PredictionRequest):
     try:
@@ -68,7 +69,16 @@ async def predict(data: PredictionRequest):
 
         # Perform prediction using the model pipeline
         prediction = model.predict(features)
-        return {"predicted_crop_yield": prediction.tolist()}
+        return {"predicted_crop_yield": prediction.tolist(),
+                "ndvi": mean_ndvi,
+                "ndwi": mean_ndwi,
+                "ndmi": mean_ndmi,
+                "albedo": mean_albedo,
+                "lai": mean_lai,
+                "rvi": rvi_mean,
+                "precip": mean_precip,
+                "humidity": mean_humidity
+                }
     except Exception as e:
         logger.error(f"Prediction error: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Prediction error: {e}")
