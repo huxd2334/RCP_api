@@ -10,10 +10,29 @@ from process_input.landsat_index import process_landsat_data
 from process_input.sentinel1_index import extract_sen1_data
 from process_input.weather import get_weather_data
 from process_input.sentinel2_index import fetch_and_process_data
+from fastapi.middleware.cors import CORSMiddleware
 
 import joblib
 
 app = FastAPI()
+
+
+# Add CORS middleware
+origins = [
+    "http://localhost:5174",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    # Add any other origins you need
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
