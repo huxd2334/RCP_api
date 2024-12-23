@@ -10,12 +10,14 @@ import pystac_client
 import planetary_computer as pc
 from odc.stac import stac_load
 from pystac.extensions.eo import EOExtension as eo
-
-PC_API_KEY = ""
+PC_API_KEY ="st=2024-10-30T04%3A39%3A47Z&se=2024-10-31T05%3A24%3A47Z&sp=rl&sv=2024-05-04&sr=c&skoid=9c8ff44a-6a2c-4dfb-b298-1c9212f64d9a&sktid=72f988bf-86f1-41af-91ab-2d7cd011db47&skt=2024-10-31T01%3A20%3A26Z&ske=2024-11-07T01%3A20%3A26Z&sks=b&skv=2024-05-04&sig=yxW50NrgqfNEwh6gA5GpPmjbepQ0PP8d0LIG7B5GgAU%3D"
 pc.settings.set_subscription_key(PC_API_KEY)
 # Others
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import logging
+
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -166,107 +168,187 @@ def get_flags_to_mask(mask, flags):
 #         logger.error(f"Error in get_ls_index: {e}", exc_info=True)
 #         raise
 
-def process_landsat_data(harvest_date, lon, lat, box_deg=0.10, L_savi=0.5, C1=6, C2=7.5, L_evi=1):
-    # start_time = time.time()  # Start timing
-    # Set a time window for 8 days before & after the date of harvest
-    harvest_date = pd.to_datetime(harvest_date, dayfirst=True)
+def process_landsat_data(lat, lon, time_slice):
+    G = 2.5
+    C1 = 6
+    C2 = 7.5
+    L = 1
+    resolution = 30 # meters per pixel
+    scale = resolution/111320.0 # degrees per pixel
+    box_size_deg = 0.10 # bounding box in degrees
 
-    day_offset = pd.Timedelta(days=8)
-    today = pd.Timestamp.today()
-    if harvest_date > today:
-        harvest_date = today
-        start_date = harvest_date - day_offset*2
-        end_date = harvest_date
-        time_range = f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
-    else:
-        start_date = harvest_date - day_offset
-        end_date = harvest_date + day_offset
-        time_range = f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
+    min_lon = lon - box_size_deg / 2
+    min_lat = lat - box_size_deg / 2
+    max_lon = lon + box_size_deg / 2
+    max_lat = lat + box_size_deg / 2
 
-    bbox = [lon - box_deg / 2, lat - box_deg / 2, lon + box_deg / 2, lat + box_deg / 2]
+    time_of_interest = time_slice
+
+    bbox_of_interest = (min_lon, min_lat, max_lon, max_lat)
+
     catalog = pystac_client.Client.open("https://planetarycomputer.microsoft.com/api/stac/v1")
-    # Search and load data from Landsat
     search = catalog.search(
-        collections=["landsat-c2-l2"],
-        bbox=bbox,
-        datetime=time_range,
-        query={'platform': {"in": ["landsat-8", "landsat-9"]}}
-    )
+      collections=["landsat-c2-l2"],
+      bbox=bbox_of_interest,
+      datetime=time_of_interest,
+      query={'platform': {"in": ["landsat-8", "landsat-9"]},})
     items = list(search.get_all_items())
-    if not items:
-        return None
 
-    # Load bands of interest and mask
     xx = stac_load(
         items,
-        bands=['red', 'nir08', 'qa_pixel', 'green', 'blue', 'swir16'],
+        bands=['red', 'nir08', 'qa_pixel', 'green', 'swir16', 'blue', 'swir22'],
         crs='EPSG:4326',
-        resolution=30 / 111320,
+        resolution=scale,
         patch_url=pc.sign,
-        bbox=bbox
-    )
+        chunks={"x": 2048, "y": 2048},
+        bbox= bbox_of_interest, )
 
-    # Apply scaling and offset
-    xx['red'] = xx['red'] * 0.0000275 - 0.2
-    xx['nir08'] = xx['nir08'] * 0.0000275 - 0.2
-    xx['green'] = xx['green'] * 0.0000275 - 0.2
-    xx['blue'] = xx['blue'] * 0.0000275 - 0.2
+    xx['red'] = (xx['red'] * 0.0000275) - 0.2
+    xx['green'] = (xx['green'] * 0.0000275) - 0.2
+    xx['blue'] = (xx['blue'] * 0.0000275) - 0.2
+    xx['nir08'] = (xx['nir08'] * 0.0000275) - 0.2
     xx['swir16'] = xx['swir16'] * 0.0000275 - 0.2
 
-    # Create mask
     quality_mask = get_flags_to_mask(xx['qa_pixel'], ['fill', 'dilated_cloud', 'cirrus', 'cloud', 'shadow', 'water'])
-
     masked_data = xx.where(~quality_mask)
     clean_data = masked_data.mean(dim=['longitude', 'latitude']).compute()
 
-    # Calculate indices
-    ndvi = (clean_data.nir08 - clean_data.red) / (clean_data.nir08 + clean_data.red)
-    savi = ((clean_data.nir08 - clean_data.red) / (clean_data.nir08 + clean_data.red + L_savi)) * (1 + L_savi)
-    evi = 2.5 * ((clean_data.nir08 - clean_data.red) / (clean_data.nir08 + C1 * clean_data.red - C2 * clean_data.blue + L_evi))
-    ndwi = (clean_data.green - clean_data.swir16) / (clean_data.green + clean_data.swir16)
-    avi = np.power((clean_data.nir08 * (1 - clean_data.red) * (clean_data.nir08 - clean_data.red)), 1 / 3)
-    ndmi = (clean_data.nir08 - clean_data.swir16) / (clean_data.nir08 + clean_data.swir16)
-    albedo = 0.356 * clean_data.blue + 0.130 * clean_data.green + 0.373 * clean_data.red + 0.085 * clean_data.nir08 + 0.072 * clean_data.swir16 + 0.0018
+    red = clean_data.red.mean().item()
+    green = clean_data.green.mean().item()
+    blue = clean_data.blue.mean().item()
+    nir08 = clean_data.nir08.mean().item()
+    swir16 = clean_data.swir16.mean().item()
 
-    # Extract values
-    # savi_vals = savi.values
-    # evi_vals = evi.values
-    ndwi_vals = ndwi.values
-    # avi_vals = avi.values
-    ndmi_vals = ndmi.values
-    albedo_vals = albedo.values
-    ndvi_vals = ndvi.values
+    ndvi = (nir08 - red) / (nir08 + red)
+    savi = ((nir08 - red) / (nir08 + red + L)) * (1 + L)
+    # evi = G * ((nir08 - red) / (nir08 + C1 * red - C2 * blue + L))
+    ndwi = (green - swir16) / (green + swir16)
+    # avi = np.power((nir08 * (1 - red) * (nir08 - red)), 1 / 3)
+    ndmi = (nir08 - swir16) / (nir08 + swir16)
+    # albedo = 0.356 * blue + 0.130 * green + 0.373 * red + 0.085 * nir08 + 0.072 * swir16 + 0.0018
 
-# Calculate and return means
-    means = {
-        # 'mean_savi': np.mean(savi_vals),
-        # 'mean_evi': np.mean(evi_vals),
-        'mean_ndwi': np.mean(ndwi_vals),
-        # 'mean_avi': np.mean(avi_vals),
-        'mean_ndmi': np.mean(ndmi_vals),
-        'mean_albedo': np.mean(albedo_vals),
-        'mean_ndvi': np.mean(ndvi_vals)
+    # logging.info(f"NDVI: {ndvi}, SAVI: {savi}, NDWI: {ndwi}, NDMI: {ndmi}")
+
+    return ndvi, savi, ndwi, ndmi
+
+def define_time_slice(doh, season):
+    date_obj = datetime.strptime(doh, '%d-%m-%Y')
+    today = datetime.today()
+
+
+    if date_obj > today:
+        doh = today.strftime('%Y-%m-%d')
+        logging.warning(f"Date is in the future. Using today's date: {doh}")
+        date_obj = today
+    else:
+        doh = date_obj.strftime('%Y-%m-%d')
+
+    year = date_obj.year
+    month = date_obj.month
+
+    def ws_time_slices():
+        # we have 3 time slices for WS
+        # 1. 11/01 - 12/31
+        # 2. 01/01 - 02/28
+        # 3. 03/01 - doh
+        if month == 11 or month == 12:
+            return f"{year}-11-01/{doh}", None, None
+        elif month == 1 or month == 2:
+            return f"{year-1}-11-01/{year-1}-12-31", f"{year}-01-01/{doh}", None
+        elif month == 3:
+            return f"{year-1}-11-01/{year-1}-12-31", f"{year}-01-01/{year}-02-28", f"{year}-03-01/{doh}"
+        else:
+            return None, None, None
+
+    def sa_time_slices():
+        # we have 3 time slices for SA
+        # 1. 04/01 - 05/31
+        # 2. 06/01 - 06/30
+        # 3. 07/01 - doh
+        if month == 4 or month == 5:
+            return f"{year}-04-01/{doh}", None, None
+        elif month == 6:
+            return f"{year}-04-01/{year}-05-31", f"{year}-06-01/{doh}", None
+        elif month >= 7:
+            return f"{year}-04-01/{year}-05-31", f"{year}-06-01/{year}-06-30", f"{year}-07-01/{doh}"
+        else:
+            return None, None, None
+
+    switch = {
+        "WS": ws_time_slices,
+        "SA": sa_time_slices
     }
-    # end_time = time.time()  # End timing
-    # elapsed_time = end_time - start_time
-    # logger.info(f"Function process_landsat_data took {elapsed_time:.2f} seconds to execute")
-    logger.info(f"Means: {means}")
-    return (
-        # means['mean_savi'],
-        # means['mean_evi'],
-        means['mean_ndvi'],
-        means['mean_ndwi'],
-        # means['mean_avi'],
-        means['mean_ndmi'],
-        means['mean_albedo']
+
+    if season in switch:
+        return switch[season]()
+    else:
+        raise ValueError(f"Invalid season: {season}")
+
+# time_slice_ws1, time_slice_ws2, time_slice_ws3 = define_time_slice("23-06-2024", "SA")
+# print(time_slice_ws1, time_slice_ws2, time_slice_ws3)
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def get_indices_by_stage(lat, lon, doh, season):
+    time_slice1, time_slice2, time_slice3 = define_time_slice(doh, season)
+    logging.info(f"Time slices: {time_slice1}, {time_slice2}, {time_slice3}")
+
+    def process_if_not_none(time_slice):
+        return process_landsat_data(lat, lon, time_slice) if time_slice else (np.nan, np.nan, np.nan, np.nan)
+
+    indices = [None, None, None]
+    time_slices = [time_slice1, time_slice2, time_slice3]
+
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(process_if_not_none, ts): i for i, ts in enumerate(time_slices)}
+
+        for future in as_completed(futures):
+            index = futures[future]
+            indices[index] = future.result()
+
+    logging.info(
+        f"NDVI_1: {indices[0][0]}, SAVI_1: {indices[0][1]}, NDWI_1: {indices[0][2]}, NDMI_1: {indices[0][3]}\n"
+        f"NDVI_2: {indices[1][0]}, SAVI_2: {indices[1][1]}, NDWI_2: {indices[1][2]}, NDMI_2: {indices[1][3]}\n"
+        f"NDVI_3: {indices[2][0]}, SAVI_3: {indices[2][1]}, NDWI_3: {indices[2][2]}, NDMI_3: {indices[2][3]}"
     )
 
-
-
-# Test the function
-# savi, evi, ndvi, ndwi, avi, ndmi = process_landsat_data("30-12-2024",  105.248554,10.510542 )
-# print(f"Savi: {savi}, EVI: {evi}, NDVI: {ndvi}, NDWI: {ndwi}, AVI: {avi}, NDMI: {ndmi}")
-
-
-# date = find_window_size("WS", "23-11-2024")
-# print(date)
+    return indices[0], indices[1], indices[2]
+# def get_indices_by_stage(lat, lon, doh, season):
+#     time_slice1, time_slice2, time_slice3 = define_time_slice(doh, season)
+#     logging.info(f"Time slices: {time_slice1}, {time_slice2}, {time_slice3}")
+#
+#     def process_if_not_none(time_slice):
+#         return process_landsat_data(lat, lon, time_slice) if time_slice else (np.nan, np.nan, np.nan, np.nan)
+#
+#     with ThreadPoolExecutor() as executor:
+#         future1 = executor.submit(process_if_not_none, time_slice1)
+#         future2 = executor.submit(process_if_not_none, time_slice2)
+#         future3 = executor.submit(process_if_not_none, time_slice3)
+#
+#         indices1 = future1.result()
+#         indices2 = future2.result()
+#         indices3 = future3.result()
+#
+#         logging.info(
+#                      f"NDVI_1: {indices1[0]}, SAVI_1: {indices1[1]}, NDWI_1: {indices1[2]}, NDMI_1: {indices1[3]}\n"
+#                      f"NDVI_2: {indices2[0]}, SAVI_2: {indices2[1]}, NDWI_2: {indices2[2]}, NDMI_2: {indices2[3]}\n"
+#                      f"NDVI_3: {indices3[0]}, SAVI_3: {indices3[1]}, NDWI_3: {indices3[2]}, NDMI_3: {indices3[3]}",)
+#
+#     return indices1, indices2, indices3
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#     # rs = get_indices_by_stage(10.510542, 105.248554, "03-07-2024", "SA")
+#     # # Unpack the results
+#     # ndvi_1, savi_1, ndwi_1, ndmi_1 = rs[0]
+#     # ndvi_2, savi_2, ndwi_2, ndmi_2 = rs[1]
+#     # ndvi_3, savi_3, ndwi_3, ndmi_3 = rs[2]
+#     #
+#     # # Print the values
+#     # print(f"ndvi_1: {ndvi_1}, ndvi_2: {ndvi_2}, ndvi_3: {ndvi_3}")
