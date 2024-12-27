@@ -7,6 +7,7 @@ import logging
 import asyncio
 from fastapi.middleware.cors import CORSMiddleware
 
+from process_input.identify import get_vvvh_by_stage
 from process_input.landsat_index import get_indices_by_stage
 from process_input.sentinel1_index import get_rvi_by_stage
 from process_input.weather import get_weather_data
@@ -18,7 +19,7 @@ app = FastAPI()
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5174"],  # Adjust this to your frontend's URL
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods
     allow_headers=["*"],  # Allow all headers
@@ -29,9 +30,16 @@ logger = logging.getLogger(__name__)
 
 try:
     model = joblib.load("model/model_cb_rf.pkl")
+    model2 = joblib.load("model/crop_classification_3.pkl")
 except Exception as e:
     logger.error(f"Failed to load model: {e}")
     model = None
+    model2 = None
+
+class IdentifyRequest(BaseModel):
+    Date_of_Harvest: date
+    Latitude: float
+    Longitude: float
 
 
 class PredictionRequest(BaseModel):
@@ -68,26 +76,48 @@ def replace_nan_with_none(data):
 async def root():
     return {"message": "Hello World"}
 
-
+# @app.post("/identify/")
+# async def identify(data: IdentifyRequest):
+#     try:
+#         date_str = data.Date_of_Harvest.strftime('%d-%m-%Y')
+#
+#         # Run all fetch operations in parallel
+#         vvvh_future = asyncio.to_thread(
+#             get_vvvh_by_stage,
+#             data.Latitude,
+#             data.Longitude,
+#             date_str,
+#         )
+#         # Wait for all operations to complete
+#         vvvh_result = await asyncio.gather(
+#             vvvh_future
+#         )
+#
+#         # Unpack the results
+#         (vh2_i, vv2_i), (vh_i, vv_i), (vh_2, vv_2), (vh, vv) = vvvh_result[0]
+#
+#         # Combine all features into a single array
+#         features = np.array([
+#             vh2_i, vv2_i, vh_i, vv_i,
+#             vh_2, vv_2, vh, vv
+#         ]).reshape(1, -1)
+#
+#         # Perform prediction using the model pipeline
+#         land = model2.predict(features)
+#         response = {
+#             "class_of_land": land.tolist(),
+#         }
+#
+#         response = replace_nan_with_none(response)
+#         return response
+#     except Exception as e:
+#         logger.error(f"Prediction error: {e}", exc_info=True)
+#         raise HTTPException(status_code=400, detail=f"Prediction error: {e}")
 
 
 @app.post("/predict/")
 async def predict(data: PredictionRequest):
     try:
-        # season = data.Season
-        # intensity = formmat_intensity(data.Intensity)
-        # # Asynchronously fetch indices
-        # rvi_1, rvi_2, rvi_3 = await asyncio.to_thread(get_rvi_by_stage, data.Latitude, data.Longitude, data.Date_of_Harvest.strftime('%d-%m-%Y'), season )
-        #
-        # rs = await asyncio.to_thread(get_indices_by_stage, data.Latitude, data.Longitude, data.Date_of_Harvest.strftime('%d-%m-%Y'), season)
-        # ndvi_1, savi_1, ndwi_1, ndmi_1 = rs[0]
-        # ndvi_2, savi_2, ndwi_2, ndmi_2 = rs[1]
-        # ndvi_3, savi_3, ndwi_3, ndmi_3 = rs[2]
-        #
-        # # Asynchronously fetch weather data
-        # mean_humidity, mean_precip\
-        #     = await asyncio.to_thread(get_weather_data, data.Longitude, data.Latitude, season,
-        #                                  data.Date_of_Harvest.strftime('%d-%m-%Y'))
         season = data.Season
         intensity = formmat_intensity(data.Intensity)
         date_str = data.Date_of_Harvest.strftime('%d-%m-%Y')

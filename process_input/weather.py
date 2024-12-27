@@ -11,7 +11,7 @@ from sympy.strategies.core import switch
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-VC_API_KEY = "3NDWEP3GJVMRCSVRRZS6BT59K"
+VC_API_KEY = "YZ9TAWBYRZ5LM6777JR46FX4N"
 
 def api_call(location, start_date, end_date):
     key=VC_API_KEY
